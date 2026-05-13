@@ -14,24 +14,56 @@ while ($listener.IsListening) {
   $req = $context.Request
   $res = $context.Response
 
-  if ($req.Url.AbsolutePath -eq "/list") {
-    $path = $req.QueryString["path"]
-    if ([string]::IsNullOrWhiteSpace($path)) { $path = "." }
+  $path = $req.QueryString["path"]
+  if ([string]::IsNullOrWhiteSpace($path)) { $path = "." }
+  $folder = Join-Path $Root $path
 
-    $full = Join-Path $Root $path
-    if (Test-Path $full) {
-      $items = Get-ChildItem $full | Select-Object -ExpandProperty Name
-      $body = [Text.Encoding]::UTF8.GetBytes(($items -join "`n"))
-      $res.StatusCode = 200
-      $res.ContentType = "text/plain; charset=utf-8"
-      $res.OutputStream.Write($body, 0, $body.Length)
-    } else {
-      $res.StatusCode = 404
-      $body = [Text.Encoding]::UTF8.GetBytes("Folder not found")
-      $res.OutputStream.Write($body, 0, $body.Length)
+  switch ($req.Url.AbsolutePath) {
+    "/list" {
+      if (Test-Path $folder) {
+        $items = Get-ChildItem $folder | Select-Object -ExpandProperty Name
+        $body = [Text.Encoding]::UTF8.GetBytes(($items -join "`n"))
+        $res.StatusCode = 200
+        $res.ContentType = "text/plain; charset=utf-8"
+        $res.OutputStream.Write($body, 0, $body.Length)
+      } else {
+        $res.StatusCode = 404
+      }
     }
-  } else {
-    $res.StatusCode = 404
+    "/download" {
+      $name = $req.QueryString["name"]
+      $target = Join-Path $folder $name
+      if ((Test-Path $target) -and -not (Get-Item $target).PSIsContainer) {
+        $bytes = [System.IO.File]::ReadAllBytes($target)
+        $res.StatusCode = 200
+        $res.ContentType = "application/octet-stream"
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+      } else {
+        $res.StatusCode = 404
+      }
+    }
+    "/upload" {
+      $name = $req.QueryString["name"]
+      if (-not (Test-Path $folder)) { New-Item -ItemType Directory -Path $folder | Out-Null }
+      $target = Join-Path $folder $name
+      $ms = New-Object System.IO.MemoryStream
+      $req.InputStream.CopyTo($ms)
+      [System.IO.File]::WriteAllBytes($target, $ms.ToArray())
+      $res.StatusCode = 200
+    }
+    "/delete" {
+      $name = $req.QueryString["name"]
+      $target = Join-Path $folder $name
+      if (Test-Path $target) {
+        Remove-Item -Path $target -Force
+        $res.StatusCode = 200
+      } else {
+        $res.StatusCode = 404
+      }
+    }
+    default {
+      $res.StatusCode = 404
+    }
   }
 
   $res.Close()

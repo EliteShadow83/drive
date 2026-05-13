@@ -2,14 +2,18 @@
 
 This project is a starter Android app that behaves like a lightweight Google Drive browser for a folder hosted from a Windows PC on your local network.
 
+## Features
+
+- Browse a folder from Windows (`/list`)
+- Upload a file to Windows (`/upload`)
+- Download a file from Windows (`/download`)
+- Delete a file on Windows (`/delete`)
+- Remembers last server URL and path
+
 ## How it works
 
 1. Run the Windows server script from `server/windows/folder-list-server.ps1`.
-2. The script exposes:
-   - `GET /list?path=shared`
-   - Response format: one file/folder name per line.
-3. The Android app connects to the server and displays the returned files.
-4. The app remembers the last server URL and folder path it connected to.
+2. The Android app connects to the server and performs list/upload/download/delete operations.
 
 ## Run the server (Windows)
 
@@ -22,12 +26,5 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 - Open in Android Studio.
 - Build and run on a device on the same Wi-Fi as the Windows PC.
-- Enter:
-  - Server URL: `http://<windows-ip>:8080`
-  - Folder path: `/` or `shared`
-- Tap **Connect**.
-
-## Notes
-
-- This is intentionally simple and does not include auth, TLS, or upload/download UI yet.
-- For production, add authentication, HTTPS, and JSON APIs.
+- Enter server URL + folder path.
+- Use file name + content with action buttons.

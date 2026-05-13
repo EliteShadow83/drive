@@ -2,12 +2,14 @@
 
 This folder contains server-side scripts for sharing a Windows folder to the Android app.
 
-## Windows script
+## Endpoints
 
-- File: `windows/folder-list-server.ps1`
-- Purpose: exposes `GET /list?path=...` over HTTP and returns one item name per line.
+- `GET /list?path=<folder>`: list file/folder names
+- `GET /download?path=<folder>&name=<file>`: download file bytes
+- `POST /upload?path=<folder>&name=<file>`: upload file bytes
+- `POST /delete?path=<folder>&name=<file>`: delete file
 
-### Run it
+## Run it
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
