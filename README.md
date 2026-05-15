@@ -2,6 +2,12 @@
 
 This project is a starter Android app that behaves like a lightweight Google Drive browser for a folder hosted from a Windows PC on your local network.
 
+
+## Gradle compatibility note
+
+This project is pinned to **Gradle 8.10.2** (see `gradle/wrapper/gradle-wrapper.properties`) with AGP `8.5.2`.
+Using Gradle 10 currently triggers Android plugin deprecation warnings and is not supported in this starter.
+
 ## Features
 
 - Browse a folder from Windows (`/list`)
