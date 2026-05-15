@@ -29,12 +29,11 @@
         android:layout_height="wrap_content"
         android:hint="File name (example: notes.txt)" />
 
-    <EditText
-        android:id="@+id/fileContentInput"
+    <Button
+        android:id="@+id/pickFileBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Upload text content"
-        android:minLines="3" />
+        android:text="Pick File for Upload" />
 
     <LinearLayout
         android:layout_width="match_parent"

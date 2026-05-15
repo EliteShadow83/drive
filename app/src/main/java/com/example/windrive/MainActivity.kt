@@ -2,9 +2,12 @@ package com.example.windrive
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -21,6 +24,20 @@ import java.net.URLEncoder
 class MainActivity : AppCompatActivity() {
     private val uiScope = CoroutineScope(Dispatchers.Main)
     private lateinit var adapter: FileListAdapter
+    private var selectedUploadUri: android.net.Uri? = null
+
+    private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val fileNameInput = findViewById<EditText>(R.id.fileNameInput)
+        val statusText = findViewById<TextView>(R.id.statusText)
+        selectedUploadUri = uri
+        if (uri != null) {
+            val resolvedName = resolveDisplayName(uri) ?: "upload.bin"
+            fileNameInput.setText(resolvedName)
+            statusText.text = "Selected upload file: $resolvedName"
+        } else {
+            statusText.text = "No file selected"
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,11 +46,11 @@ class MainActivity : AppCompatActivity() {
         val urlInput = findViewById<EditText>(R.id.urlInput)
         val pathInput = findViewById<EditText>(R.id.pathInput)
         val fileNameInput = findViewById<EditText>(R.id.fileNameInput)
-        val fileContentInput = findViewById<EditText>(R.id.fileContentInput)
         val connectBtn = findViewById<Button>(R.id.connectBtn)
         val uploadBtn = findViewById<Button>(R.id.uploadBtn)
         val downloadBtn = findViewById<Button>(R.id.downloadBtn)
         val deleteBtn = findViewById<Button>(R.id.deleteBtn)
+        val pickFileBtn = findViewById<Button>(R.id.pickFileBtn)
         val statusText = findViewById<TextView>(R.id.statusText)
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
@@ -48,30 +65,40 @@ class MainActivity : AppCompatActivity() {
         filesList.layoutManager = LinearLayoutManager(this)
         filesList.adapter = adapter
 
+        pickFileBtn.setOnClickListener {
+            filePickerLauncher.launch("*/*")
+        }
+
         connectBtn.setOnClickListener {
-            val baseUrl = urlInput.text.toString().trim().trimEnd('/')
+            val baseUrl = normalizeServerUrl(urlInput.text.toString())
             val path = pathInput.text.toString().trim()
             if (baseUrl.isBlank() || path.isBlank()) {
                 statusText.text = "Please enter server URL and folder path"
                 return@setOnClickListener
             }
+            urlInput.setText(baseUrl)
             savePrefs(prefs, baseUrl, path)
             refreshListing(baseUrl, path, statusText)
         }
 
         uploadBtn.setOnClickListener {
-            val baseUrl = urlInput.text.toString().trim().trimEnd('/')
+            val baseUrl = normalizeServerUrl(urlInput.text.toString())
             val path = pathInput.text.toString().trim()
             val fileName = fileNameInput.text.toString().trim()
-            val content = fileContentInput.text.toString()
+            val pickedUri = selectedUploadUri
             if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
                 statusText.text = "URL, path, and file name are required"
                 return@setOnClickListener
             }
+            if (pickedUri == null) {
+                statusText.text = "Pick a file first"
+                return@setOnClickListener
+            }
+            urlInput.setText(baseUrl)
             savePrefs(prefs, baseUrl, path)
             uiScope.launch {
                 statusText.text = "Uploading..."
-                val result = uploadFile(baseUrl, path, fileName, content)
+                val result = uploadFile(baseUrl, path, fileName, pickedUri)
                 statusText.text = result.fold(
                     onSuccess = { "Uploaded $fileName" },
                     onFailure = { it.message ?: "Upload failed" }
@@ -81,13 +108,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         downloadBtn.setOnClickListener {
-            val baseUrl = urlInput.text.toString().trim().trimEnd('/')
+            val baseUrl = normalizeServerUrl(urlInput.text.toString())
             val path = pathInput.text.toString().trim()
             val fileName = fileNameInput.text.toString().trim()
             if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
                 statusText.text = "URL, path, and file name are required"
                 return@setOnClickListener
             }
+            urlInput.setText(baseUrl)
             savePrefs(prefs, baseUrl, path)
             uiScope.launch {
                 statusText.text = "Downloading..."
@@ -100,13 +128,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         deleteBtn.setOnClickListener {
-            val baseUrl = urlInput.text.toString().trim().trimEnd('/')
+            val baseUrl = normalizeServerUrl(urlInput.text.toString())
             val path = pathInput.text.toString().trim()
             val fileName = fileNameInput.text.toString().trim()
             if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
                 statusText.text = "URL, path, and file name are required"
                 return@setOnClickListener
             }
+            urlInput.setText(baseUrl)
             savePrefs(prefs, baseUrl, path)
             uiScope.launch {
                 statusText.text = "Deleting..."
@@ -118,6 +147,20 @@ class MainActivity : AppCompatActivity() {
                 refreshListing(baseUrl, path, statusText)
             }
         }
+    }
+
+    private fun normalizeServerUrl(input: String): String {
+        val trimmed = input.trim().trimEnd('/')
+        if (trimmed.isBlank()) return trimmed
+        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "http://$trimmed"
+    }
+
+    private fun resolveDisplayName(uri: android.net.Uri): String? {
+        val cursor = contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) return it.getString(0)
+        }
+        return null
     }
 
     private fun refreshListing(baseUrl: String, path: String, statusText: TextView) {
@@ -149,13 +192,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun uploadFile(baseUrl: String, path: String, fileName: String, content: String): Result<Unit> = withContext(Dispatchers.IO) {
+    private suspend fun uploadFile(baseUrl: String, path: String, fileName: String, fileUri: android.net.Uri): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val p = URLEncoder.encode(path.removePrefix("/"), "UTF-8")
             val f = URLEncoder.encode(fileName, "UTF-8")
             val connection = openConnection("$baseUrl/upload?path=$p&name=$f", "POST")
             connection.doOutput = true
-            connection.outputStream.use { it.write(content.toByteArray()) }
+            contentResolver.openInputStream(fileUri)?.use { input ->
+                connection.outputStream.use { out -> input.copyTo(out) }
+            } ?: error("Unable to read selected file")
             if (connection.responseCode !in 200..299) error("Upload failed: ${connection.responseCode}")
         }
     }
@@ -171,9 +216,20 @@ class MainActivity : AppCompatActivity() {
                 ?.trim('"')
                 ?.ifBlank { fileName }
                 ?: fileName
-            val outFile = java.io.File(getExternalFilesDir(null), headerName)
-            connection.inputStream.use { input -> outFile.outputStream().use { input.copyTo(it) } }
-            outFile.absolutePath
+
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, headerName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Unable to create download file")
+
+            contentResolver.openOutputStream(uri)?.use { out ->
+                connection.inputStream.use { input -> input.copyTo(out) }
+            } ?: error("Unable to write download file")
+
+            "Downloads/$headerName"
         }
     }
 
