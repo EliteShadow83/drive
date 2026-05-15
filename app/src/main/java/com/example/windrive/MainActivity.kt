@@ -41,7 +41,10 @@ class MainActivity : AppCompatActivity() {
         urlInput.setText(prefs.getString("last_server_url", ""))
         pathInput.setText(prefs.getString("last_folder_path", "/"))
 
-        adapter = FileListAdapter()
+        adapter = FileListAdapter { selected ->
+            fileNameInput.setText(selected)
+            statusText.text = "Selected file: $selected"
+        }
         filesList.layoutManager = LinearLayoutManager(this)
         filesList.adapter = adapter
 
@@ -163,7 +166,12 @@ class MainActivity : AppCompatActivity() {
             val f = URLEncoder.encode(fileName, "UTF-8")
             val connection = openConnection("$baseUrl/download?path=$p&name=$f", "GET")
             if (connection.responseCode != 200) error("Download failed: ${connection.responseCode}")
-            val outFile = java.io.File(getExternalFilesDir(null), fileName)
+            val headerName = connection.getHeaderField("Content-Disposition")
+                ?.substringAfter("filename=", fileName)
+                ?.trim('"')
+                ?.ifBlank { fileName }
+                ?: fileName
+            val outFile = java.io.File(getExternalFilesDir(null), headerName)
             connection.inputStream.use { input -> outFile.outputStream().use { input.copyTo(it) } }
             outFile.absolutePath
         }

@@ -73,11 +73,13 @@ while ($listener.IsListening) {
       }
       "/download" {
         $name = $req.QueryString["name"]
+        if ([string]::IsNullOrWhiteSpace($name)) { $res.StatusCode = 400; $status = 400; break }
         $target = Join-Path $folder $name
         if ((Test-Path $target) -and -not (Get-Item $target).PSIsContainer) {
           $bytes = [System.IO.File]::ReadAllBytes($target)
           $res.StatusCode = 200
           $res.ContentType = "application/octet-stream"
+          $res.AddHeader("Content-Disposition", "attachment; filename=`"$name`"")
           $res.OutputStream.Write($bytes, 0, $bytes.Length)
           $status = 200
         } else {
@@ -87,6 +89,7 @@ while ($listener.IsListening) {
       }
       "/upload" {
         $name = $req.QueryString["name"]
+        if ([string]::IsNullOrWhiteSpace($name)) { $res.StatusCode = 400; $status = 400; break }
         if (-not (Test-Path $folder)) { New-Item -ItemType Directory -Path $folder | Out-Null }
         $target = Join-Path $folder $name
         $ms = New-Object System.IO.MemoryStream
@@ -97,6 +100,7 @@ while ($listener.IsListening) {
       }
       "/delete" {
         $name = $req.QueryString["name"]
+        if ([string]::IsNullOrWhiteSpace($name)) { $res.StatusCode = 400; $status = 400; break }
         $target = Join-Path $folder $name
         if (Test-Path $target) {
           Remove-Item -Path $target -Force

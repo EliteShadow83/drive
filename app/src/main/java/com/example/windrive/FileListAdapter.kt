@@ -6,7 +6,9 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
-class FileListAdapter : RecyclerView.Adapter<FileListAdapter.FileViewHolder>() {
+class FileListAdapter(
+    private val onItemClicked: (String) -> Unit
+) : RecyclerView.Adapter<FileListAdapter.FileViewHolder>() {
     private val files = mutableListOf<String>()
 
     fun submit(items: List<String>) {
@@ -23,7 +25,9 @@ class FileListAdapter : RecyclerView.Adapter<FileListAdapter.FileViewHolder>() {
     override fun getItemCount(): Int = files.size
 
     override fun onBindViewHolder(holder: FileViewHolder, position: Int) {
-        holder.fileName.text = files[position]
+        val name = files[position]
+        holder.fileName.text = name
+        holder.itemView.setOnClickListener { onItemClicked(name) }
     }
 
     class FileViewHolder(view: View) : RecyclerView.ViewHolder(view) {
