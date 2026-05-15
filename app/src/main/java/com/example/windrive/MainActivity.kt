@@ -1,15 +1,15 @@
 package com.example.windrive
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Button
-import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,15 +25,13 @@ class MainActivity : AppCompatActivity() {
     private val uiScope = CoroutineScope(Dispatchers.Main)
     private lateinit var adapter: FileListAdapter
     private var selectedUploadUri: android.net.Uri? = null
+    private lateinit var statusText: TextView
 
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val fileNameInput = findViewById<EditText>(R.id.fileNameInput)
-        val statusText = findViewById<TextView>(R.id.statusText)
         selectedUploadUri = uri
         if (uri != null) {
             val resolvedName = resolveDisplayName(uri) ?: "upload.bin"
-            fileNameInput.setText(resolvedName)
-            statusText.text = "Selected upload file: $resolvedName"
+            uploadSelectedFile(resolvedName)
         } else {
             statusText.text = "No file selected"
         }
@@ -43,109 +41,113 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val urlInput = findViewById<EditText>(R.id.urlInput)
-        val pathInput = findViewById<EditText>(R.id.pathInput)
-        val fileNameInput = findViewById<EditText>(R.id.fileNameInput)
-        val connectBtn = findViewById<Button>(R.id.connectBtn)
-        val uploadBtn = findViewById<Button>(R.id.uploadBtn)
-        val downloadBtn = findViewById<Button>(R.id.downloadBtn)
-        val deleteBtn = findViewById<Button>(R.id.deleteBtn)
-        val pickFileBtn = findViewById<Button>(R.id.pickFileBtn)
-        val statusText = findViewById<TextView>(R.id.statusText)
+        val settingsBtn = findViewById<Button>(R.id.settingsBtn)
+        val uploadPickBtn = findViewById<Button>(R.id.uploadPickBtn)
+        statusText = findViewById(R.id.statusText)
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
-        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
-        urlInput.setText(prefs.getString("last_server_url", ""))
-        pathInput.setText(prefs.getString("last_folder_path", "/"))
-
-        adapter = FileListAdapter { selected ->
-            fileNameInput.setText(selected)
-            statusText.text = "Selected file: $selected"
-        }
-        filesList.layoutManager = LinearLayoutManager(this)
+        adapter = FileListAdapter(
+            onDownloadClicked = { fileName -> downloadFromCurrentSettings(fileName) },
+            onDeleteClicked = { fileName -> deleteFromCurrentSettings(fileName) }
+        )
+        filesList.layoutManager = GridLayoutManager(this, 2)
         filesList.adapter = adapter
 
-        pickFileBtn.setOnClickListener {
+        settingsBtn.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        uploadPickBtn.setOnClickListener {
             filePickerLauncher.launch("*/*")
         }
+    }
 
-        connectBtn.setOnClickListener {
-            val baseUrl = normalizeServerUrl(urlInput.text.toString())
-            val path = pathInput.text.toString().trim()
-            if (baseUrl.isBlank() || path.isBlank()) {
-                statusText.text = "Please enter server URL and folder path"
-                return@setOnClickListener
-            }
-            urlInput.setText(baseUrl)
-            savePrefs(prefs, baseUrl, path)
-            refreshListing(baseUrl, path, statusText)
+    override fun onResume() {
+        super.onResume()
+        refreshListingFromCurrentSettings()
+    }
+
+    private fun refreshListingFromCurrentSettings() {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            adapter.submit(emptyList())
+            return
         }
 
-        uploadBtn.setOnClickListener {
-            val baseUrl = normalizeServerUrl(urlInput.text.toString())
-            val path = pathInput.text.toString().trim()
-            val fileName = fileNameInput.text.toString().trim()
-            val pickedUri = selectedUploadUri
-            if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
-                statusText.text = "URL, path, and file name are required"
-                return@setOnClickListener
-            }
-            if (pickedUri == null) {
-                statusText.text = "Pick a file first"
-                return@setOnClickListener
-            }
-            urlInput.setText(baseUrl)
-            savePrefs(prefs, baseUrl, path)
-            uiScope.launch {
-                statusText.text = "Uploading..."
-                val result = uploadFile(baseUrl, path, fileName, pickedUri)
-                statusText.text = result.fold(
-                    onSuccess = { "Uploaded $fileName" },
-                    onFailure = { it.message ?: "Upload failed" }
-                )
-                refreshListing(baseUrl, path, statusText)
+        statusText.text = "Loading..."
+        uiScope.launch {
+            val result = fetchFolderListing(baseUrl, path)
+            if (result.isSuccess) {
+                val files = result.getOrNull().orEmpty()
+                statusText.text = "Connected • ${files.size} item(s)"
+                adapter.submit(files)
+            } else {
+                statusText.text = result.exceptionOrNull()?.message ?: "Connection failed"
+                adapter.submit(emptyList())
             }
         }
+    }
 
-        downloadBtn.setOnClickListener {
-            val baseUrl = normalizeServerUrl(urlInput.text.toString())
-            val path = pathInput.text.toString().trim()
-            val fileName = fileNameInput.text.toString().trim()
-            if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
-                statusText.text = "URL, path, and file name are required"
-                return@setOnClickListener
-            }
-            urlInput.setText(baseUrl)
-            savePrefs(prefs, baseUrl, path)
-            uiScope.launch {
-                statusText.text = "Downloading..."
-                val result = downloadFile(baseUrl, path, fileName)
-                statusText.text = result.fold(
-                    onSuccess = { location -> "Downloaded to $location" },
-                    onFailure = { it.message ?: "Download failed" }
-                )
-            }
+    private fun uploadSelectedFile(fileName: String) {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        val uri = selectedUploadUri ?: return
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
         }
 
-        deleteBtn.setOnClickListener {
-            val baseUrl = normalizeServerUrl(urlInput.text.toString())
-            val path = pathInput.text.toString().trim()
-            val fileName = fileNameInput.text.toString().trim()
-            if (baseUrl.isBlank() || path.isBlank() || fileName.isBlank()) {
-                statusText.text = "URL, path, and file name are required"
-                return@setOnClickListener
-            }
-            urlInput.setText(baseUrl)
-            savePrefs(prefs, baseUrl, path)
-            uiScope.launch {
-                statusText.text = "Deleting..."
-                val result = deleteFile(baseUrl, path, fileName)
-                statusText.text = result.fold(
-                    onSuccess = { "Deleted $fileName" },
-                    onFailure = { it.message ?: "Delete failed" }
-                )
-                refreshListing(baseUrl, path, statusText)
-            }
+        uiScope.launch {
+            statusText.text = "Uploading $fileName..."
+            val result = uploadFile(baseUrl, path, fileName, uri)
+            statusText.text = result.fold(
+                onSuccess = { "Uploaded $fileName" },
+                onFailure = { it.message ?: "Upload failed" }
+            )
+            refreshListingFromCurrentSettings()
+        }
+    }
+
+    private fun downloadFromCurrentSettings(fileName: String) {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
+        }
+
+        uiScope.launch {
+            statusText.text = "Downloading $fileName..."
+            val result = downloadFile(baseUrl, path, fileName)
+            statusText.text = result.fold(
+                onSuccess = { location -> "Downloaded to $location" },
+                onFailure = { it.message ?: "Download failed" }
+            )
+        }
+    }
+
+    private fun deleteFromCurrentSettings(fileName: String) {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
+        }
+
+        uiScope.launch {
+            statusText.text = "Deleting $fileName..."
+            val result = deleteFile(baseUrl, path, fileName)
+            statusText.text = result.fold(
+                onSuccess = { "Deleted $fileName" },
+                onFailure = { it.message ?: "Delete failed" }
+            )
+            refreshListingFromCurrentSettings()
         }
     }
 
@@ -161,25 +163,6 @@ class MainActivity : AppCompatActivity() {
             if (it.moveToFirst()) return it.getString(0)
         }
         return null
-    }
-
-    private fun refreshListing(baseUrl: String, path: String, statusText: TextView) {
-        statusText.text = "Loading..."
-        uiScope.launch {
-            val result = fetchFolderListing(baseUrl, path)
-            if (result.isSuccess) {
-                val files = result.getOrNull().orEmpty()
-                statusText.text = "Connected • ${files.size} item(s)"
-                adapter.submit(files)
-            } else {
-                statusText.text = result.exceptionOrNull()?.message ?: "Connection failed"
-                adapter.submit(emptyList())
-            }
-        }
-    }
-
-    private fun savePrefs(prefs: android.content.SharedPreferences, baseUrl: String, path: String) {
-        prefs.edit().putString("last_server_url", baseUrl).putString("last_folder_path", path).apply()
     }
 
     private suspend fun fetchFolderListing(baseUrl: String, path: String): Result<List<String>> = withContext(Dispatchers.IO) {

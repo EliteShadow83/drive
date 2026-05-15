@@ -3,77 +3,55 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
-
-    <EditText
-        android:id="@+id/urlInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Server URL (example: http://192.168.1.2:8080)" />
-
-    <EditText
-        android:id="@+id/pathInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Folder path (example: /shared)" />
-
-    <Button
-        android:id="@+id/connectBtn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Connect" />
-
-    <EditText
-        android:id="@+id/fileNameInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="File name (example: notes.txt)" />
-
-    <Button
-        android:id="@+id/pickFileBtn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Pick File for Upload" />
+    android:background="#0B0B0B"
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/uploadBtn"
+        <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Upload" />
+            android:text="EliteDrive"
+            android:textColor="#FF3B30"
+            android:textSize="24sp"
+            android:textStyle="bold" />
 
         <Button
-            android:id="@+id/downloadBtn"
-            android:layout_width="0dp"
+            android:id="@+id/settingsBtn"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Download" />
-
-        <Button
-            android:id="@+id/deleteBtn"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Delete" />
+            android:text="Settings"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#7A1010" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="8dp"
-        android:text="Not connected" />
+        android:layout_marginTop="8dp"
+        android:text="Not connected"
+        android:textColor="#EAEAEA" />
+
+    <Button
+        android:id="@+id/uploadPickBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Upload File"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#B71C1C" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/filesList"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:paddingTop="8dp" />
+        android:layout_marginTop="10dp"
+        android:layout_weight="1" />
 
 </LinearLayout>
