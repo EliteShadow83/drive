@@ -7,6 +7,13 @@
     android:orientation="vertical"
     android:padding="12dp">
 
+    <ImageView
+        android:id="@+id/fileImagePreview"
+        android:layout_width="match_parent"
+        android:layout_height="90dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/fileIcon"
         android:layout_width="match_parent"

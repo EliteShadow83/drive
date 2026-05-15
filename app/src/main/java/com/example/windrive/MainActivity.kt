@@ -2,6 +2,8 @@ package com.example.windrive
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -46,7 +48,10 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
-        adapter = FileListAdapter { fileName -> showFileActionsPopup(fileName) }
+        adapter = FileListAdapter(
+            onTileClicked = { fileName -> showFileActionsPopup(fileName) },
+            onImagePreviewRequested = { fileName, callback -> loadImagePreview(fileName, callback) }
+        )
         filesList.layoutManager = GridLayoutManager(this, 2)
         filesList.adapter = adapter
 
@@ -148,6 +153,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+
+    private fun loadImagePreview(fileName: String, callback: (Bitmap?) -> Unit) {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            callback(null)
+            return
+        }
+
+        uiScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                runCatching {
+                    val p = URLEncoder.encode(path.removePrefix("/"), "UTF-8")
+                    val f = URLEncoder.encode(fileName, "UTF-8")
+                    val connection = openConnection("$baseUrl/download?path=$p&name=$f", "GET")
+                    if (connection.responseCode != 200) return@runCatching null
+                    connection.inputStream.use { input ->
+                        BitmapFactory.decodeStream(input)
+                    }
+                }.getOrNull()
+            }
+            callback(bitmap)
+        }
+    }
 
     private fun showFileActionsPopup(fileName: String) {
         val options = arrayOf("Download", "Delete", "Cancel")
