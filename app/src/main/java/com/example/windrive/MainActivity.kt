@@ -46,10 +46,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
-        adapter = FileListAdapter(
-            onDownloadClicked = { fileName -> downloadFromCurrentSettings(fileName) },
-            onDeleteClicked = { fileName -> deleteFromCurrentSettings(fileName) }
-        )
+        adapter = FileListAdapter { fileName -> showFileActionsPopup(fileName) }
         filesList.layoutManager = GridLayoutManager(this, 2)
         filesList.adapter = adapter
 
@@ -149,6 +146,22 @@ class MainActivity : AppCompatActivity() {
             )
             refreshListingFromCurrentSettings()
         }
+    }
+
+
+    private fun showFileActionsPopup(fileName: String) {
+        val options = arrayOf("Download", "Delete", "Cancel")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(fileName)
+            .setItems(options) { dialog, which ->
+                when (which) {
+                    0 -> downloadFromCurrentSettings(fileName)
+                    1 -> deleteFromCurrentSettings(fileName)
+                    else -> dialog.dismiss()
+                }
+            }
+            .setCancelable(true)
+            .show()
     }
 
     private fun normalizeServerUrl(input: String): String {

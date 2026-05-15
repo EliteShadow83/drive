@@ -8,36 +8,31 @@
     android:padding="12dp">
 
     <TextView
+        android:id="@+id/fileIcon"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="📄"
+        android:textColor="#FF3B30"
+        android:textSize="32sp" />
+
+    <TextView
+        android:id="@+id/filePreview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:text="File preview"
+        android:textColor="#BFBFBF"
+        android:textSize="12sp" />
+
+    <TextView
         android:id="@+id/fileName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:maxLines="2"
         android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:maxLines="2" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/downloadBtn"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Download"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#7A1010" />
-
-        <Button
-            android:id="@+id/deleteBtn"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="Delete"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#3A0A0A" />
-    </LinearLayout>
+        android:textStyle="bold" />
 </LinearLayout>
