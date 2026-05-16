@@ -11,6 +11,7 @@ import java.util.Locale
 
 class FileListAdapter(
     private val onTileClicked: (String) -> Unit,
+    private val onTileLongClicked: (String) -> Unit,
     private val onImagePreviewRequested: (String, (Bitmap?) -> Unit) -> Unit
 ) : RecyclerView.Adapter<FileListAdapter.FileViewHolder>() {
     private val files = mutableListOf<String>()
@@ -35,8 +36,9 @@ class FileListAdapter(
         holder.filePreview.text = previewFor(name)
         holder.fileImagePreview.visibility = View.GONE
         holder.fileImagePreview.setImageBitmap(null)
+        holder.fileIcon.visibility = View.VISIBLE
 
-        if (isImage(name)) {
+        if (isImage(name) || isVideo(name)) {
             onImagePreviewRequested(name) { bitmap ->
                 if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION && files[holder.bindingAdapterPosition] == name && bitmap != null) {
                     holder.fileImagePreview.visibility = View.VISIBLE
@@ -44,11 +46,13 @@ class FileListAdapter(
                     holder.fileIcon.visibility = View.GONE
                 }
             }
-        } else {
-            holder.fileIcon.visibility = View.VISIBLE
         }
 
         holder.itemView.setOnClickListener { onTileClicked(name) }
+        holder.itemView.setOnLongClickListener {
+            onTileLongClicked(name)
+            true
+        }
     }
 
     private fun isImage(fileName: String): Boolean {
@@ -56,11 +60,16 @@ class FileListAdapter(
         return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif") || lower.endsWith(".webp")
     }
 
+    private fun isVideo(fileName: String): Boolean {
+        val lower = fileName.lowercase(Locale.US)
+        return lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".webm")
+    }
+
     private fun iconFor(fileName: String): String {
         val lower = fileName.lowercase(Locale.US)
         return when {
             isImage(lower) -> "🖼️"
-            lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") -> "🎬"
+            isVideo(lower) -> "🎬"
             lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".flac") -> "🎵"
             lower.endsWith(".pdf") -> "📕"
             lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z") -> "🗜️"
@@ -77,7 +86,7 @@ class FileListAdapter(
         val lower = fileName.lowercase(Locale.US)
         return when {
             isImage(lower) -> "Image preview"
-            lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") -> "Video file"
+            isVideo(lower) -> "Video preview"
             lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".flac") -> "Audio file"
             lower.endsWith(".pdf") -> "PDF document"
             lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".log") -> "Text document"

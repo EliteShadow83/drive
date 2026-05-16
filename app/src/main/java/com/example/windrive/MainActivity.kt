@@ -2,11 +2,13 @@ package com.example.windrive
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,7 +51,8 @@ class MainActivity : AppCompatActivity() {
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
         adapter = FileListAdapter(
-            onTileClicked = { fileName -> showFileActionsPopup(fileName) },
+            onTileClicked = { fileName -> openMediaOnShortPress(fileName) },
+            onTileLongClicked = { fileName -> showFileActionsPopup(fileName) },
             onImagePreviewRequested = { fileName, callback -> loadImagePreview(fileName, callback) }
         )
         filesList.layoutManager = GridLayoutManager(this, 2)
@@ -155,6 +158,48 @@ class MainActivity : AppCompatActivity() {
 
 
 
+
+    private fun openMediaOnShortPress(fileName: String) {
+        if (!isImageOrVideo(fileName)) {
+            showFileActionsPopup(fileName)
+            return
+        }
+
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
+        }
+
+        uiScope.launch {
+            statusText.text = "Opening $fileName..."
+            val result = fetchMediaToDownloads(baseUrl, path, fileName)
+            result.onSuccess { uri ->
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mimeTypeFor(fileName))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                runCatching { startActivity(intent) }
+                    .onFailure { statusText.text = "No app available to open this file" }
+            }.onFailure {
+                statusText.text = it.message ?: "Open failed"
+            }
+        }
+    }
+
+    private fun isImageOrVideo(fileName: String): Boolean {
+        val lower = fileName.lowercase()
+        return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif") || lower.endsWith(".webp") ||
+            lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".webm")
+    }
+
+    private fun mimeTypeFor(fileName: String): String {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+    }
+
     private fun loadImagePreview(fileName: String, callback: (Bitmap?) -> Unit) {
         val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
         val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
@@ -229,6 +274,28 @@ class MainActivity : AppCompatActivity() {
                 connection.outputStream.use { out -> input.copyTo(out) }
             } ?: error("Unable to read selected file")
             if (connection.responseCode !in 200..299) error("Upload failed: ${connection.responseCode}")
+        }
+    }
+
+    private suspend fun fetchMediaToDownloads(baseUrl: String, path: String, fileName: String): Result<Uri> = withContext(Dispatchers.IO) {
+        runCatching {
+            val p = URLEncoder.encode(path.removePrefix("/"), "UTF-8")
+            val f = URLEncoder.encode(fileName, "UTF-8")
+            val connection = openConnection("$baseUrl/download?path=$p&name=$f", "GET")
+            if (connection.responseCode != 200) error("Open failed: ${connection.responseCode}")
+
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeTypeFor(fileName))
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Unable to create file")
+
+            contentResolver.openOutputStream(uri)?.use { out ->
+                connection.inputStream.use { input -> input.copyTo(out) }
+            } ?: error("Unable to write file")
+            uri
         }
     }
 
