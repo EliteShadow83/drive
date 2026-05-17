@@ -8,6 +8,8 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.TextView
@@ -30,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: FileListAdapter
     private var selectedUploadUri: android.net.Uri? = null
     private lateinit var statusText: TextView
+    private var allFiles: List<String> = emptyList()
 
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         selectedUploadUri = uri
@@ -47,6 +50,8 @@ class MainActivity : AppCompatActivity() {
 
         val settingsBtn = findViewById<Button>(R.id.settingsBtn)
         val uploadPickBtn = findViewById<Button>(R.id.uploadPickBtn)
+        val addFolderFab = findViewById<Button>(R.id.addFolderFab)
+        val searchInput = findViewById<android.widget.EditText>(R.id.searchInput)
         statusText = findViewById(R.id.statusText)
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
@@ -65,6 +70,18 @@ class MainActivity : AppCompatActivity() {
         uploadPickBtn.setOnClickListener {
             filePickerLauncher.launch("*/*")
         }
+
+        addFolderFab.setOnClickListener {
+            promptCreateFolder()
+        }
+
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                applySearchFilter(s?.toString().orEmpty())
+            }
+        })
     }
 
     override fun onResume() {
@@ -87,8 +104,9 @@ class MainActivity : AppCompatActivity() {
             val result = fetchFolderListing(baseUrl, path)
             if (result.isSuccess) {
                 val files = result.getOrNull().orEmpty()
+                allFiles = files
                 statusText.text = "Connected • ${files.size} item(s)"
-                adapter.submit(files)
+                applySearchFilter("")
             } else {
                 statusText.text = result.exceptionOrNull()?.message ?: "Connection failed"
                 adapter.submit(emptyList())
@@ -240,6 +258,50 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+
+    private fun applySearchFilter(query: String) {
+        val q = query.trim().lowercase()
+        if (q.isBlank()) {
+            adapter.submit(allFiles)
+            return
+        }
+        adapter.submit(allFiles.filter { it.lowercase().contains(q) })
+    }
+
+    private fun promptCreateFolder() {
+        val input = android.widget.EditText(this)
+        input.hint = "Folder name"
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add Folder")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val folderName = input.text.toString().trim()
+                if (folderName.isNotBlank()) createFolderFromCurrentSettings(folderName)
+            }
+            .setNegativeButton("Cancel", null)
+            .setCancelable(true)
+            .show()
+    }
+
+    private fun createFolderFromCurrentSettings(folderName: String) {
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
+        }
+        uiScope.launch {
+            statusText.text = "Creating folder $folderName..."
+            val result = createFolder(baseUrl, path, folderName)
+            statusText.text = result.fold(
+                onSuccess = { "Created folder $folderName" },
+                onFailure = { "Create folder failed (server must support /mkdir)" }
+            )
+            refreshListingFromCurrentSettings()
+        }
+    }
+
     private fun normalizeServerUrl(input: String): String {
         val trimmed = input.trim().trimEnd('/')
         if (trimmed.isBlank()) return trimmed
@@ -333,6 +395,16 @@ class MainActivity : AppCompatActivity() {
             val f = URLEncoder.encode(fileName, "UTF-8")
             val connection = openConnection("$baseUrl/delete?path=$p&name=$f", "POST")
             if (connection.responseCode !in 200..299) error("Delete failed: ${connection.responseCode}")
+        }
+    }
+
+
+    private suspend fun createFolder(baseUrl: String, path: String, folderName: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val p = URLEncoder.encode(path.removePrefix("/"), "UTF-8")
+            val n = URLEncoder.encode(folderName, "UTF-8")
+            val connection = openConnection("$baseUrl/mkdir?path=$p&name=$n", "POST")
+            if (connection.responseCode !in 200..299) error("Create folder failed: ${connection.responseCode}")
         }
     }
 
