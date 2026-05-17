@@ -45,6 +45,24 @@
             android:text="Connected server: none" />
 
 
+
+        <Button
+            android:id="@+id/selectMonitorFolderBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Select Camera Monitor Folder"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#7A1010" />
+
+        <TextView
+            android:id="@+id/monitorFolderText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Monitor folder: not set"
+            android:textColor="#DDDDDD" />
+
         <CheckBox
             android:id="@+id/autoSaveMediaCheckbox"
             android:layout_width="match_parent"
