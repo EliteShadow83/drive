@@ -1,16 +1,17 @@
 package com.example.windrive
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -21,6 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -43,6 +45,12 @@ class MainActivity : AppCompatActivity() {
 
     private val uploadNotificationId = 1001
     private val uploadNotificationChannel = "upload_progress"
+
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted && ::statusText.isInitialized) {
+            statusText.text = "Upload notifications are disabled"
+        }
+    }
 
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         selectedUploadUri = uri
@@ -74,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         val addFolderFab = findViewById<Button>(R.id.addFolderFab)
         val searchInput = findViewById<android.widget.EditText>(R.id.searchInput)
         statusText = findViewById(R.id.statusText)
+        requestNotificationPermissionIfNeeded()
         val filesList = findViewById<RecyclerView>(R.id.filesList)
 
         adapter = FileListAdapter(
@@ -159,7 +168,11 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "Uploading $fileName..."
             val result = uploadFile(baseUrl, path, fileName, uri)
             statusText.text = result.fold(onSuccess = { "Uploaded $fileName" }, onFailure = { it.message ?: "Upload failed" })
-            NotificationManagerCompat.from(this@MainActivity).cancel(uploadNotificationId)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            ) {
+                NotificationManagerCompat.from(this@MainActivity).cancel(uploadNotificationId)
+            }
             refreshListingFromCurrentSettings()
         }
     }
@@ -230,6 +243,14 @@ class MainActivity : AppCompatActivity() {
     private suspend fun deleteFile(baseUrl: String, path: String, fileName: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching { val p=URLEncoder.encode(path.removePrefix("/"), "UTF-8"); val f=URLEncoder.encode(fileName, "UTF-8"); val c=openConnection("$baseUrl/delete?path=$p&name=$f", "POST"); if(c.responseCode !in 200..299) error("Delete failed: ${c.responseCode}") } }
     private suspend fun createFolder(baseUrl: String, path: String, folderName: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching { val p=URLEncoder.encode(path.removePrefix("/"), "UTF-8"); val n=URLEncoder.encode(folderName, "UTF-8"); val c=openConnection("$baseUrl/mkdir?path=$p&name=$n", "POST"); if(c.responseCode !in 200..299) error("Create folder failed: ${c.responseCode}") } }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(uploadNotificationChannel, "Upload Progress", NotificationManager.IMPORTANCE_LOW)
@@ -238,6 +259,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showUploadProgressNotification(fileName: String, uploaded: Long, total: Long, done: Boolean = false) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
         val builder = NotificationCompat.Builder(this, uploadNotificationChannel)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(if (done) "Upload complete" else "Uploading $fileName")

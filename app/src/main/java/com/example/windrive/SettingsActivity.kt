@@ -1,8 +1,11 @@
 package com.example.windrive
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.CheckBox
@@ -10,9 +13,18 @@ import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 class SettingsActivity : AppCompatActivity() {
     private var monitorFolderUri: Uri? = null
+
+    private val mediaPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val allGranted = grants.values.all { it }
+        if (!allGranted) {
+            findViewById<CheckBox>(R.id.autoSaveMediaCheckbox).isChecked = false
+            findViewById<TextView>(R.id.monitorFolderText).text = "Camera media permission denied"
+        }
+    }
 
     private val monitorFolderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -48,6 +60,9 @@ class SettingsActivity : AppCompatActivity() {
         connectedServerText.text = "Connected server: ${if (url.isBlank()) "none" else url}"
         monitorFolderText.text = "Monitor folder: ${monitorFolderUri?.toString() ?: "not set"}"
         autoSaveCheckbox.isChecked = prefs.getBoolean("auto_save_camera_media", false)
+        autoSaveCheckbox.setOnCheckedChangeListener { _, checked ->
+            if (checked) requestCameraMediaPermissionsIfNeeded()
+        }
 
         selectMonitorFolderBtn.setOnClickListener {
             monitorFolderPickerLauncher.launch(monitorFolderUri)
@@ -63,6 +78,24 @@ class SettingsActivity : AppCompatActivity() {
                 .apply()
             connectedServerText.text = "Connected server: $normalized"
             finish()
+        }
+    }
+
+    private fun requestCameraMediaPermissionsIfNeeded() {
+        val permissions = cameraMediaPermissions().filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (permissions.isNotEmpty()) {
+            mediaPermissionLauncher.launch(permissions)
+        }
+    }
+
+    private fun cameraMediaPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 
