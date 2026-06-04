@@ -68,10 +68,7 @@ class MainActivity : AppCompatActivity() {
 
     private val folderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
         if (treeUri != null) {
-            contentResolver.takePersistableUriPermission(
-                treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            persistFolderReadPermission(treeUri)
             uploadFolderFromTree(treeUri)
         }
     }
@@ -145,13 +142,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         autoSaveMonitorJob = uiScope.launch {
-            baselineExistingCameraMediaIfNeeded(prefs, root, monitorFolderUri)
+            runCatching { baselineExistingCameraMediaIfNeeded(prefs, root, monitorFolderUri) }
+                .onFailure { statusText.text = "Auto-save setup failed: ${it.message ?: "folder access error"}" }
+
             while (isActive) {
-                val uploadedCount = uploadNewCameraMedia(prefs, root, monitorFolderUri, baseUrl, path)
-                if (uploadedCount > 0) {
-                    statusText.text = "Auto-saved $uploadedCount new camera file(s)"
-                    refreshListingFromCurrentSettings()
-                }
+                runCatching { uploadNewCameraMedia(prefs, root, monitorFolderUri, baseUrl, path) }
+                    .onSuccess { uploadedCount ->
+                        if (uploadedCount > 0) {
+                            statusText.text = "Auto-saved $uploadedCount new camera file(s)"
+                            refreshListingFromCurrentSettings()
+                        }
+                    }
+                    .onFailure { statusText.text = "Auto-save paused: ${it.message ?: "folder access error"}" }
                 delay(15_000)
             }
         }
@@ -200,8 +202,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun collectMediaFiles(folder: DocumentFile): List<DocumentFile> {
+        val children = runCatching { folder.listFiles() }.getOrElse { emptyArray() }
         val files = mutableListOf<DocumentFile>()
-        folder.listFiles().forEach { child ->
+        children.forEach { child ->
             when {
                 child.isDirectory -> files += collectMediaFiles(child)
                 child.isFile && isCameraMediaFile(child) -> files += child
@@ -214,6 +217,17 @@ class MainActivity : AppCompatActivity() {
         val mimeType = file.type.orEmpty()
         val name = file.name.orEmpty()
         return mimeType.startsWith("image/") || mimeType.startsWith("video/") || isImageOrVideo(name)
+    }
+
+    private fun persistFolderReadPermission(uri: Uri) {
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }.onFailure {
+            statusText.text = "Folder access is temporary; reselect folder if upload fails"
+        }
     }
 
     private fun showPlusOptions() {
@@ -243,7 +257,10 @@ class MainActivity : AppCompatActivity() {
 
         uiScope.launch {
             statusText.text = "Uploading folder..."
-            val files = root.listFiles().filter { it.isFile }
+            val files = runCatching { root.listFiles().filter { it.isFile } }.getOrElse {
+                statusText.text = "Unable to read selected folder"
+                emptyList()
+            }
             var ok = 0
             files.forEach { file ->
                 val name = file.name ?: return@forEach
@@ -394,7 +411,8 @@ class MainActivity : AppCompatActivity() {
             builder.setSmallIcon(android.R.drawable.stat_sys_upload_done)
         }
 
-        NotificationManagerCompat.from(this).notify(uploadNotificationId, builder.build())
+        runCatching { NotificationManagerCompat.from(this).notify(uploadNotificationId, builder.build()) }
+            .onFailure { if (::statusText.isInitialized) statusText.text = "Upload notifications unavailable" }
     }
 
     private fun openConnection(url: String, method: String): HttpURLConnection =

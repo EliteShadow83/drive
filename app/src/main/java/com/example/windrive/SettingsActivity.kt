@@ -28,12 +28,18 @@ class SettingsActivity : AppCompatActivity() {
 
     private val monitorFolderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
+            val permissionSaved = runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }.isSuccess
             monitorFolderUri = uri
-            findViewById<TextView>(R.id.monitorFolderText).text = "Monitor folder: $uri"
+            findViewById<TextView>(R.id.monitorFolderText).text = if (permissionSaved) {
+                "Monitor folder: $uri"
+            } else {
+                "Monitor folder: $uri (temporary access)"
+            }
         }
     }
 
