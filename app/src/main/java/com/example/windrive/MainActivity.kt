@@ -28,6 +28,9 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -42,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedUploadUri: Uri? = null
     private lateinit var statusText: TextView
     private var allFiles: List<String> = emptyList()
+    private var autoSaveMonitorJob: Job? = null
 
     private val uploadNotificationId = 1001
     private val uploadNotificationChannel = "upload_progress"
@@ -104,7 +108,113 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    override fun onResume() { super.onResume(); refreshListingFromCurrentSettings() }
+    override fun onResume() {
+        super.onResume()
+        refreshListingFromCurrentSettings()
+        startAutoSaveMonitorIfEnabled()
+    }
+
+    override fun onDestroy() {
+        autoSaveMonitorJob?.cancel()
+        autoSaveMonitorJob = null
+        super.onDestroy()
+    }
+
+    private fun startAutoSaveMonitorIfEnabled() {
+        autoSaveMonitorJob?.cancel()
+        autoSaveMonitorJob = null
+
+        val prefs = getSharedPreferences("windrive_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("auto_save_camera_media", false)) return
+
+        val monitorFolderUri = prefs.getString("monitor_folder_uri", "").orEmpty()
+        if (monitorFolderUri.isBlank()) {
+            statusText.text = "Select a camera monitor folder in Settings"
+            return
+        }
+
+        val root = DocumentFile.fromTreeUri(this, Uri.parse(monitorFolderUri)) ?: run {
+            statusText.text = "Monitor folder is unavailable"
+            return
+        }
+        val baseUrl = normalizeServerUrl(prefs.getString("last_server_url", "") ?: "")
+        val path = prefs.getString("last_folder_path", "/") ?: "/"
+        if (baseUrl.isBlank() || path.isBlank()) {
+            statusText.text = "Configure server in Settings"
+            return
+        }
+
+        autoSaveMonitorJob = uiScope.launch {
+            baselineExistingCameraMediaIfNeeded(prefs, root, monitorFolderUri)
+            while (isActive) {
+                val uploadedCount = uploadNewCameraMedia(prefs, root, monitorFolderUri, baseUrl, path)
+                if (uploadedCount > 0) {
+                    statusText.text = "Auto-saved $uploadedCount new camera file(s)"
+                    refreshListingFromCurrentSettings()
+                }
+                delay(15_000)
+            }
+        }
+    }
+
+    private fun baselineExistingCameraMediaIfNeeded(
+        prefs: android.content.SharedPreferences,
+        root: DocumentFile,
+        monitorFolderUri: String
+    ) {
+        val initializedKey = "auto_save_initialized_$monitorFolderUri"
+        if (prefs.getBoolean(initializedKey, false)) return
+
+        val seen = collectMediaFiles(root).map { it.uri.toString() }.toSet()
+        prefs.edit()
+            .putStringSet("auto_saved_media_$monitorFolderUri", seen)
+            .putBoolean(initializedKey, true)
+            .apply()
+        statusText.text = "Auto-save is watching for new photos/videos"
+    }
+
+    private suspend fun uploadNewCameraMedia(
+        prefs: android.content.SharedPreferences,
+        root: DocumentFile,
+        monitorFolderUri: String,
+        baseUrl: String,
+        path: String
+    ): Int {
+        val seenKey = "auto_saved_media_$monitorFolderUri"
+        val seen = prefs.getStringSet(seenKey, emptySet()).orEmpty().toMutableSet()
+        var uploaded = 0
+
+        collectMediaFiles(root)
+            .filterNot { seen.contains(it.uri.toString()) }
+            .forEach { file ->
+                val fileName = file.name ?: return@forEach
+                val result = uploadFile(baseUrl, path, fileName, file.uri)
+                if (result.isSuccess) {
+                    seen.add(file.uri.toString())
+                    uploaded++
+                    prefs.edit().putStringSet(seenKey, seen.toSet()).apply()
+                }
+            }
+
+        return uploaded
+    }
+
+    private fun collectMediaFiles(folder: DocumentFile): List<DocumentFile> {
+        val files = mutableListOf<DocumentFile>()
+        folder.listFiles().forEach { child ->
+            when {
+                child.isDirectory -> files += collectMediaFiles(child)
+                child.isFile && isCameraMediaFile(child) -> files += child
+            }
+        }
+        return files
+    }
+
+    private fun isCameraMediaFile(file: DocumentFile): Boolean {
+        val mimeType = file.type.orEmpty()
+        val name = file.name.orEmpty()
+        return mimeType.startsWith("image/") || mimeType.startsWith("video/") || isImageOrVideo(name)
+    }
 
     private fun showPlusOptions() {
         val options = arrayOf("Create Server Folder", "Upload Phone Folder", "Cancel")
