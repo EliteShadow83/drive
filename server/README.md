@@ -16,6 +16,7 @@ The root page shows available endpoints.
 - `GET /list?path=<folder>`: list file/folder names (plain text)
 - `GET /download?path=<folder>&name=<file>`: download file bytes
 - `POST /upload?path=<folder>&name=<file>`: upload file bytes
+- `POST /mkdir?path=<folder>&name=<folder>`: create a folder
 - `POST /delete?path=<folder>&name=<file>`: delete file
 
 ## Terminal feedback

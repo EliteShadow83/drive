@@ -47,6 +47,7 @@ while ($listener.IsListening) {
       <li><a href='/list?path=.'>/list?path=.</a></li>
       <li>/download?path=.&name=filename.txt</li>
       <li>POST /upload?path=.&name=filename.txt</li>
+      <li>POST /mkdir?path=.&name=foldername</li>
       <li>POST /delete?path=.&name=filename.txt</li>
     </ul>
   </body>
@@ -92,9 +93,27 @@ while ($listener.IsListening) {
         if ([string]::IsNullOrWhiteSpace($name)) { $res.StatusCode = 400; $status = 400; break }
         if (-not (Test-Path $folder)) { New-Item -ItemType Directory -Path $folder | Out-Null }
         $target = Join-Path $folder $name
-        $ms = New-Object System.IO.MemoryStream
-        $req.InputStream.CopyTo($ms)
-        [System.IO.File]::WriteAllBytes($target, $ms.ToArray())
+        $fileStream = [System.IO.File]::Open($target, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+        $buffer = New-Object byte[] 65536
+        $totalBytes = 0L
+        try {
+          while (($read = $req.InputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $fileStream.Write($buffer, 0, $read)
+            $totalBytes += $read
+          }
+        } finally {
+          $fileStream.Close()
+        }
+        $res.StatusCode = 200
+        $status = 200
+        Write-Host "Uploaded $name ($totalBytes bytes) to $folder" -ForegroundColor DarkGreen
+      }
+      "/mkdir" {
+        $name = $req.QueryString["name"]
+        if ([string]::IsNullOrWhiteSpace($name)) { $res.StatusCode = 400; $status = 400; break }
+        if (-not (Test-Path $folder)) { New-Item -ItemType Directory -Path $folder | Out-Null }
+        $target = Join-Path $folder $name
+        if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
         $res.StatusCode = 200
         $status = 200
       }

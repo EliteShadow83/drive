@@ -50,6 +50,11 @@ class MainActivity : AppCompatActivity() {
     private val uploadNotificationId = 1001
     private val uploadNotificationChannel = "upload_progress"
 
+    private data class AutoSaveUploadReport(
+        val uploaded: Int,
+        val failed: Int
+    )
+
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted && ::statusText.isInitialized) {
             statusText.text = "Upload notifications are disabled"
@@ -147,10 +152,17 @@ class MainActivity : AppCompatActivity() {
 
             while (isActive) {
                 runCatching { uploadNewCameraMedia(prefs, root, monitorFolderUri, baseUrl, path) }
-                    .onSuccess { uploadedCount ->
-                        if (uploadedCount > 0) {
-                            statusText.text = "Auto-saved $uploadedCount new camera file(s)"
-                            refreshListingFromCurrentSettings()
+                    .onSuccess { report ->
+                        when {
+                            report.uploaded > 0 && report.failed > 0 -> {
+                                statusText.text = "Auto-saved ${report.uploaded}; ${report.failed} failed"
+                                refreshListingFromCurrentSettings()
+                            }
+                            report.uploaded > 0 -> {
+                                statusText.text = "Auto-saved ${report.uploaded} new camera file(s)"
+                                refreshListingFromCurrentSettings()
+                            }
+                            report.failed > 0 -> statusText.text = "Auto-save failed for ${report.failed} file(s)"
                         }
                     }
                     .onFailure { statusText.text = "Auto-save paused: ${it.message ?: "folder access error"}" }
@@ -181,10 +193,11 @@ class MainActivity : AppCompatActivity() {
         monitorFolderUri: String,
         baseUrl: String,
         path: String
-    ): Int {
+    ): AutoSaveUploadReport {
         val seenKey = "auto_saved_media_$monitorFolderUri"
         val seen = prefs.getStringSet(seenKey, emptySet()).orEmpty().toMutableSet()
         var uploaded = 0
+        var failed = 0
 
         collectMediaFiles(root)
             .filterNot { seen.contains(it.uri.toString()) }
@@ -195,10 +208,12 @@ class MainActivity : AppCompatActivity() {
                     seen.add(file.uri.toString())
                     uploaded++
                     prefs.edit().putStringSet(seenKey, seen.toSet()).apply()
+                } else {
+                    failed++
                 }
             }
 
-        return uploaded
+        return AutoSaveUploadReport(uploaded = uploaded, failed = failed)
     }
 
     private fun collectMediaFiles(folder: DocumentFile): List<DocumentFile> {
@@ -344,10 +359,17 @@ class MainActivity : AppCompatActivity() {
         runCatching {
             val p = URLEncoder.encode(path.removePrefix("/"), "UTF-8")
             val f = URLEncoder.encode(fileName, "UTF-8")
+            val totalBytes = contentResolver.openAssetFileDescriptor(fileUri, "r")?.use { it.length } ?: -1L
             val connection = openConnection("$baseUrl/upload?path=$p&name=$f", "POST")
+            connection.doInput = true
             connection.doOutput = true
+            connection.setRequestProperty("Content-Type", mimeTypeFor(fileName))
+            if (totalBytes >= 0L) {
+                connection.setFixedLengthStreamingMode(totalBytes)
+            } else {
+                connection.setChunkedStreamingMode(DEFAULT_BUFFER_SIZE)
+            }
 
-            val totalBytes = contentResolver.openAssetFileDescriptor(fileUri, "r")?.length ?: -1L
             contentResolver.openInputStream(fileUri)?.use { input ->
                 connection.outputStream.use { out ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -358,9 +380,15 @@ class MainActivity : AppCompatActivity() {
                         uploaded += read
                         showUploadProgressNotification(fileName, uploaded, totalBytes)
                     }
+                    out.flush()
                 }
             } ?: error("Unable to read selected file")
-            if (connection.responseCode !in 200..299) error("Upload failed: ${connection.responseCode}")
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                error("Upload failed: $responseCode ${errorBody.take(120)}".trim())
+            }
             showUploadProgressNotification(fileName, totalBytes, totalBytes, done = true)
         }
     }
