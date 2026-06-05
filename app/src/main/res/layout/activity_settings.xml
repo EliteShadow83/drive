@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B0B0B">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Settings"
+            android:textColor="#FF3B30"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/urlInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Server URL"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#AAAAAA" />
+
+        <EditText
+            android:id="@+id/pathInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Folder path"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#AAAAAA" />
+
+        <TextView
+            android:id="@+id/connectedServerText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColor="#DDDDDD"
+            android:text="Connected server: none" />
+
+
+
+        <Button
+            android:id="@+id/selectMonitorFolderBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Select Camera Monitor Folder"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#7A1010" />
+
+        <TextView
+            android:id="@+id/monitorFolderText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Monitor folder: not set"
+            android:textColor="#DDDDDD" />
+
+        <CheckBox
+            android:id="@+id/autoSaveMediaCheckbox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Auto-save camera photos/videos"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/saveSettingsBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Save Settings"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#B71C1C" />
+    </LinearLayout>
+</ScrollView>
